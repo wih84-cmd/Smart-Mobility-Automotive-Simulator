@@ -1,86 +1,83 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="모빌리티 종합 시뮬레이터", page_icon="🏎️", layout="wide")
+st.set_page_config(page_title="모빌리티 통합 제어 시스템", layout="wide")
 
-st.markdown("## 🏎️ 하이브리드 모빌리티 통합 주행 & 에너지 시뮬레이터")
+st.markdown("## 🏎️ 스마트 모빌리티 동력 제어 및 주행 시뮬레이터")
 
 components.html("""
 <!DOCTYPE html>
 <html>
 <head>
     <style>
-        body { font-family: sans-serif; background: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .main-ui { display: flex; gap: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(10, 35px); gap: 2px; background: #cbd5e1; padding: 4px; border-radius: 8px; }
-        .tile { width: 35px; height: 35px; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 8px; border-radius: 2px; }
-        .tile.road { background: #475569; color: white; }
-        .panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
-        .meter { height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; margin-top: 5px; }
-        .fill { height: 100%; width: 0%; transition: width 0.3s; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f8fafc; padding: 20px; }
+        .wrapper { display: flex; gap: 20px; }
+        .track-panel { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .grid { display: grid; grid-template-columns: repeat(12, 30px); gap: 2px; }
+        .tile { width: 30px; height: 30px; background: #e2e8f0; border-radius: 4px; cursor: pointer; }
+        .tile.road { background: #475569; }
+        .car { position: absolute; width: 25px; height: 25px; background: #ef4444; border-radius: 5px; transition: all 0.3s linear; }
+        
+        .dashboard { width: 350px; background: #1e293b; color: white; padding: 20px; border-radius: 12px; }
+        .val { font-size: 24px; font-weight: bold; color: #38bdf8; }
+        .btn-group { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+        select, button { padding: 10px; border-radius: 6px; border: none; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div class="main-ui">
-        <div>
+    <div class="wrapper">
+        <div class="track-panel">
             <div class="grid" id="grid"></div>
-            <div style="margin-top:10px">
-                <select id="carType">
-                    <option value="small">소형차 (1.0L)</option>
-                    <option value="medium">중형차 (2.0L)</option>
-                    <option value="large">대형차 (3.5L)</option>
-                </select>
-                <button onclick="startSim()">주행 시작</button>
+            <div id="road-view" style="position:relative; height:40px; margin-top:10px;">
+                <div id="car" class="car"></div>
             </div>
         </div>
-        <div class="panel">
-            <h3>실시간 모니터링</h3>
-            <p>엔진 RPM: <span id="val-rpm">0</span></p>
-            <p>소모 전류(A): <span id="val-amps">0.0</span></p>
-            <p>시스템 부하율: <span id="val-load">0%</span></p>
-            <div class="meter"><div id="load-bar" class="fill"></div></div>
-            <p id="msg" style="font-weight:bold; margin-top:10px;"></p>
+        <div class="dashboard">
+            <h3>대시보드</h3>
+            <p>모드: <span id="val-mode">-</span></p>
+            <p>에너지 소비율: <span id="val-eng">0</span></p>
+            <div class="btn-group">
+                <select id="mode">
+                    <option value="EV">전기 (EV)</option>
+                    <option value="OIL">내연기관 (ICE)</option>
+                    <option value="HYBRID">하이브리드 (HEV)</option>
+                </select>
+                <select id="carType">
+                    <option value="1.0">소형차</option>
+                    <option value="2.0">중형차</option>
+                    <option value="3.5">대형차</option>
+                </select>
+                <button onclick="start()">주행 시작</button>
+            </div>
         </div>
     </div>
 
     <script>
-        const gridEl = document.getElementById('grid');
-        let gridState = Array(100).fill(false);
-        for(let i=0; i<100; i++) {
-            let div = document.createElement('div');
-            div.className = 'tile';
-            div.onclick = () => { gridState[i] = !gridState[i]; div.classList.toggle('road'); };
-            gridEl.appendChild(div);
+        const grid = document.getElementById('grid');
+        let path = Array(144).fill(false);
+        for(let i=0; i<144; i++) {
+            let t = document.createElement('div'); t.className = 'tile';
+            t.onclick = () => { path[i] = !path[i]; t.classList.toggle('road'); };
+            grid.appendChild(t);
         }
 
-        const specs = { 
-            small: { hp: 100, amp: 15 }, 
-            medium: { hp: 150, amp: 25 }, 
-            large: { hp: 250, amp: 45 } 
-        };
-
-        function startSim() {
-            let roadCount = gridState.filter(v => v).length;
-            if(roadCount === 0) return;
+        function start() {
+            let roadLen = path.filter(v => v).length;
+            let mode = document.getElementById('mode').value;
             let type = document.getElementById('carType').value;
             
-            // 물리 계산 로직
-            let rpm = roadCount * 80;
-            let amps = (roadCount * specs[type].amp) / 10;
-            let load = Math.min((roadCount / 20) * 100, 100);
+            // 에너지 계산 공식
+            let factor = (mode === 'EV') ? 0.8 : (mode === 'OIL' ? 1.2 : 0.9);
+            let energy = (roadLen * type * factor).toFixed(1);
             
-            document.getElementById('val-rpm').innerText = rpm;
-            document.getElementById('val-amps').innerText = amps.toFixed(1);
-            document.getElementById('val-load').innerText = load + '%';
+            document.getElementById('val-mode').innerText = mode;
+            document.getElementById('val-eng').innerText = energy + " Unit";
             
-            let bar = document.getElementById('load-bar');
-            bar.style.width = load + '%';
-            bar.style.backgroundColor = load > 80 ? 'red' : 'green';
-            
-            document.getElementById('msg').innerText = load > 80 ? '⚠️ 과부하 경고!' : '✓ 정상 주행 중';
-            document.getElementById('msg').style.color = load > 80 ? 'red' : 'green';
+            // 애니메이션
+            let car = document.getElementById('car');
+            car.style.left = (roadLen * 2) + 'px';
         }
     </script>
 </body>
 </html>
-""", height=500)
+""", height=600)
